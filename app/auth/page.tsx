@@ -410,7 +410,7 @@ export default function AuthPage() {
                       type="submit"
                       className="w-full flex items-center justify-center gap-2 bg-primary text-white py-4 rounded-xl font-semibold hover:bg-primary/90 transition-all shadow-lg shadow-primary/25 hover:shadow-primary/40 group mt-2"
                     >
-                      {mode === "login" ? "Login" : "Create Account"}
+                      <Link href="/onboarding">{mode === "login" ? "Login" : "Create Account"}</Link>
                       <ArrowRight
                         size={18}
                         className="group-hover:translate-x-1 transition-transform"
