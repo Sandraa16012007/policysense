@@ -475,9 +475,11 @@ export default function DashboardPage() {
               <button className="p-3 text-slate-500 hover:text-primary transition-colors hover:bg-white/5 rounded-xl">
                 <Bookmark size={24} />
               </button>
-              <button className="bg-white/5 text-white px-8 py-3 rounded-xl font-bold hover:bg-primary transition-all shadow-xl hover:shadow-primary/20 border border-white/10 hover:border-primary">
-                View Report
-              </button>
+              <Link href={`/dashboard/results/${item.id}`}>
+                <button className="bg-white/5 text-white px-8 py-3 rounded-xl font-bold hover:bg-primary transition-all shadow-xl hover:shadow-primary/20 border border-white/10 hover:border-primary">
+                  View Report
+                </button>
+              </Link>
             </div>
           </div>
         ))}
