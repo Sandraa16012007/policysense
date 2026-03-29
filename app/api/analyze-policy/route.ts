@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     }
 
     // 2. Call structured policy extraction API (server-side Gemini)
-    const structuredPolicy = await structurePolicy(rawText);
+    const structuredPolicy = await structurePolicy(rawText, userData);
 
     if (!structuredPolicy) {
       throw new Error("Failed to extract structured data from policy.");

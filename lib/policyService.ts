@@ -1,4 +1,5 @@
 import { model } from "./gemini";
+import { UserData } from "./userService";
 
 /* ──────────────────────── TYPES ──────────────────────── */
 
@@ -82,7 +83,17 @@ export function generateFallbackActions(keyPoints: string[]): ActionRequired[] {
 /**
  * Converts raw policy or news text into a structured JSON format.
  */
-export async function structurePolicy(rawText: string): Promise<StructuredPolicy> {
+export async function structurePolicy(rawText: string, userData?: UserData): Promise<StructuredPolicy> {
+  const userContextBlock = userData ? `
+---
+
+## USER CONTEXT (CRITICAL FOR PERSONALIZATION)
+You are analyzing this policy ON BEHALF OF a specific user. Tailor the "actions_required", "summary", and "key_points" to directly address how this policy impacts THIS specific profile:
+- Role / Persona: ${userData.basic?.role || 'User'}
+- Industry / Sector: ${userData.workContext?.industry || 'General Business'}
+- Location: ${userData.location?.state || 'Unknown State'}, ${userData.location?.city || ''} India
+` : "";
+
   const prompt = `
 You are a strict information extraction engine.
 
@@ -98,7 +109,7 @@ Extract structured policy data from the input text.
 * If title is missing → generate a concise, specific title from content
 * If data is missing → return null or []
 * Output MUST be valid JSON only
-
+${userContextBlock}
 ---
 
 ## EXTRACTION DETAILS
@@ -179,6 +190,7 @@ Before returning:
 * Ensure at least 3 meaningful actions if present in text
 * Ensure no vague phrases like "follow guidelines"
 * Ensure valid JSON
+* Actions required should be the actions that the user must take to comply with the policy
 
 ---
 TEXT TO ANALYZE:
