@@ -3,7 +3,9 @@ import {
   getDoc, 
   setDoc, 
   updateDoc, 
-  serverTimestamp 
+  serverTimestamp,
+  collection,
+  addDoc
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -107,5 +109,39 @@ export const completeOnboarding = async (uid: string) => {
     return { error: null };
   } catch (error: any) {
     return { error: error.message };
+  }
+};
+
+/**
+ * Saves a policy analysis result to the user's analyses sub-collection.
+ */
+export const saveAnalysis = async (uid: string, analysisResult: any) => {
+  try {
+    const analysisRef = collection(db, "users", uid, "analyses");
+    const docRef = await addDoc(analysisRef, {
+      ...analysisResult,
+      system: {
+        createdAt: serverTimestamp(),
+      }
+    });
+    return { id: docRef.id, error: null };
+  } catch (error: any) {
+    return { id: null, error: error.message };
+  }
+};
+
+/**
+ * Retrieves a specific analysis result from the user's analyses sub-collection.
+ */
+export const getAnalysis = async (uid: string, analysisId: string) => {
+  try {
+    const docRef = doc(db, "users", uid, "analyses", analysisId);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return { data: docSnap.data(), error: null };
+    }
+    return { data: null, error: "Analysis not found" };
+  } catch (error: any) {
+    return { data: null, error: error.message };
   }
 };

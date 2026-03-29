@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
@@ -37,6 +38,7 @@ import { cn } from "@/lib/utils";
 import Footer from "@/components/Footer";
 import { useAuth } from "@/context/AuthContext";
 import { logout } from "@/lib/authService";
+import { saveAnalysis } from "@/lib/userService";
 import { ProtectedRoute } from "@/components/AuthGuards";
 import { Loader2 } from "lucide-react";
 
@@ -184,9 +186,15 @@ function Card({ title, children, className }: { title?: string; children: React.
 
 export default function DashboardPage() {
   const { user, userData, loading } = useAuth();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>("General");
   const [analyseType, setAnalyseType] = useState<AnalyseType>("text");
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  
+  // Analyse Tab States
+  const [rawText, setRawText] = useState("");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   const handleLogout = async () => {
     try {
@@ -370,6 +378,8 @@ export default function DashboardPage() {
               {analyseType === "text" && (
                 <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                   <textarea
+                    value={rawText}
+                    onChange={(e) => setRawText(e.target.value)}
                     placeholder="Paste policy text or article here..."
                     className="w-full min-h-[320px] bg-white/5 border border-white/10 rounded-2xl p-8 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all resize-none shadow-inner"
                   />
@@ -413,9 +423,53 @@ export default function DashboardPage() {
             </div>
 
             <div className="pt-4 border-t border-white/5">
-              <button className="w-full flex items-center justify-center gap-3 bg-primary text-white py-5 rounded-2xl font-bold shadow-2xl shadow-primary/30 hover:bg-primary/90 transition-all hover:scale-[1.01] active:scale-[0.99] text-xl">
-                Analyze
-                <ChevronRight size={24} />
+              {analysisError && (
+                <p className="text-red-400 text-sm mb-4 text-center font-bold">
+                  {analysisError}
+                </p>
+              )}
+              <button 
+                onClick={async () => {
+                  if (!rawText.trim() || isAnalyzing) return;
+                  setIsAnalyzing(true);
+                  setAnalysisError(null);
+                  try {
+                    const res = await fetch("/api/analyze-policy", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ rawText, uid: user?.uid, userData }),
+                    });
+                    const result = await res.json();
+                    if (result.success) {
+                      const { id, error: saveError } = await saveAnalysis(user!.uid, result.data);
+                      if (saveError || !id) {
+                         setAnalysisError(`Failed to save: ${saveError}`);
+                      } else {
+                         router.push(`/dashboard/results/${id}`);
+                      }
+                    } else {
+                      setAnalysisError(result.error);
+                    }
+                  } catch (err: any) {
+                    setAnalysisError("Failed to connect to the analysis engine.");
+                  } finally {
+                    setIsAnalyzing(false);
+                  }
+                }}
+                disabled={isAnalyzing || !rawText.trim()}
+                className="w-full flex items-center justify-center gap-3 bg-primary text-white py-5 rounded-2xl font-bold shadow-2xl shadow-primary/30 hover:bg-primary/90 transition-all hover:scale-[1.01] active:scale-[0.99] text-xl disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isAnalyzing ? (
+                  <>
+                    <Loader2 className="animate-spin" size={24} />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    Analyze
+                    <ChevronRight size={24} />
+                  </>
+                )}
               </button>
               <p className="text-center text-sm text-slate-500 mt-6 font-medium">
                 We’ll break this down into applicability, actions, and impact based on your profile.

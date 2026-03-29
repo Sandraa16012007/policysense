@@ -39,6 +39,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Footer from "@/components/Footer";
+import { useAuth } from "@/context/AuthContext";
+import { getAnalysis } from "@/lib/userService";
+import { AnalysisResult } from "@/lib/analysisService";
+import { Loader2 } from "lucide-react";
 
 /* ──────────────────────── TYPES ──────────────────────── */
 
@@ -100,14 +104,53 @@ function FloatingCard({ children, className, delay = 0 }: { children: React.Reac
 export default function ResultsDetail() {
   const { id } = useParams();
   const router = useRouter();
+  const { user, userData } = useAuth();
+  
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [complexity, setComplexity] = useState<"Basic" | "Detailed">("Basic");
   const [confidence, setConfidence] = useState(0);
+  
+  const [loadingResult, setLoadingResult] = useState(true);
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
+
+  const toggleStep = (index: number) => {
+    setCompletedSteps(prev => 
+      prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]
+    );
+  };
 
   useEffect(() => {
-    const timer = setTimeout(() => setConfidence(92), 500);
-    return () => clearTimeout(timer);
-  }, []);
+    async function fetchResult() {
+      if (!user?.uid || !id) return;
+      
+      try {
+        const { data, error: fetchError } = await getAnalysis(user.uid, id as string);
+        if (fetchError) {
+          setError(fetchError);
+        } else {
+          setAnalysis(data as AnalysisResult);
+          // Animate confidence
+          const targetConf = Math.round((data as AnalysisResult).relevance.relevance_score * 100);
+          setTimeout(() => setConfidence(targetConf), 500);
+        }
+      } catch (err: any) {
+        setError("Failed to load analysis result.");
+      } finally {
+        setLoadingResult(false);
+      }
+    }
+
+    fetchResult();
+  }, [user, id]);
+
+  const userName = userData?.basic?.name || user?.displayName || user?.email?.split('@')[0] || "User";
+  const userEmail = user?.email || "";
+  const userRole = userData?.basic?.role || "Member";
+  const userLocation = userData?.location?.state 
+    ? `${userData.location.city ? userData.location.city + ", " : ""}${userData.location.state}`
+    : "Location not set";
 
   /* ──────────────────────── NAVBAR ──────────────────────── */
 
@@ -234,355 +277,340 @@ export default function ResultsDetail() {
         <main className="flex-1 md:ml-64 lg:ml-80 bg-background min-h-[calc(100vh-80px)] overflow-x-hidden">
           <div className="p-8 lg:p-14 lg:pb-32 max-w-[1400px] mx-auto min-h-screen space-y-12">
             
-            {/* Header / Breadcrumb */}
-            <div className="flex items-center justify-between">
-              <button onClick={() => router.back()} className="flex items-center gap-2 text-slate-500 hover:text-white font-bold transition-all group">
-                <ChevronLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
-                Back to All Results
-              </button>
-              <div className="flex items-center gap-3 text-slate-500 text-sm font-black uppercase tracking-widest">
-                <History size={16} className="text-primary" />
-                Analyzed on March 25, 2026
+            {loadingResult ? (
+              <div className="flex flex-col items-center justify-center py-20 animate-in fade-in duration-500">
+                <Loader2 className="animate-spin text-primary mb-4" size={48} />
+                <p className="text-slate-500 font-bold uppercase tracking-widest text-sm">Securely retrieving analysis...</p>
               </div>
-            </div>
-
-            {/* ACTION BAR (MOVED FROM STICKY FOOTER) */}
-            <div className="bg-white/5 border border-white/10 p-2 md:p-3 rounded-2xl flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-2 md:gap-3">
-                <button className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 active:scale-95 text-xs">
-                  <Bookmark size={16} />
-                  Bookmark
-                </button>
-                <button className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/5 text-white font-bold hover:bg-white/10 transition-all border border-white/10 active:scale-95 text-xs">
-                  <Share2 size={16} />
-                  Share
+            ) : error || !analysis ? (
+              <div className="bg-red-500/10 border border-red-500/20 p-10 rounded-3xl text-center space-y-4">
+                <AlertCircle size={48} className="text-red-400 mx-auto" />
+                <h2 className="text-2xl font-bold text-white">Oops! Something went wrong</h2>
+                <p className="text-slate-400 max-w-md mx-auto">{error || "The requested analysis could not be found."}</p>
+                <button onClick={() => router.push('/dashboard')} className="bg-white/5 text-white px-8 py-3 rounded-xl font-bold hover:bg-white/10 transition-all border border-white/10">
+                  Return to Dashboard
                 </button>
               </div>
-              <div className="h-6 w-px bg-white/10 hidden md:block" />
-              <div className="flex items-center gap-2 md:gap-3">
-                <button onClick={() => router.push('/dashboard?tab=Analyse')} className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-slate-400 font-bold hover:text-white hover:bg-white/5 transition-all text-xs">
-                  <RotateCcw size={16} />
-                  Re-run Profile
-                </button>
-                <div className="h-6 w-px bg-white/10" />
-                <button className="p-2 text-slate-500 hover:text-red-400 transition-all border border-transparent hover:bg-red-500/10 rounded-lg">
-                  <AlertCircle size={18} />
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <h1 className="text-5xl font-display font-black text-white tracking-tight leading-[1.1]">GST Amendment Update 2026</h1>
-              <p className="text-slate-400 text-lg max-w-3xl">Comprehensive analysis on new filing requirements for MSMEs in the IT sector, specifically targeting SaaS platforms operating in Delhi NCR.</p>
-            </div>
-
-            {/* 1. APPLICABILITY CARD */}
-            <FloatingCard className="border-primary/30 bg-primary/[0.02]">
-              <div className="lg:flex items-center justify-between gap-12">
-                <div className="space-y-6 flex-1">
-                  <SectionHeading 
-                    title="Does this apply to you?" 
-                    tooltip="Based on your profile and source analysis"
-                  />
-                  <div className="flex flex-col gap-4">
-                    <div className="flex items-center gap-4">
-                      <div className="text-6xl font-display font-black text-white tracking-tighter">YES</div>
-                      <div className="px-5 py-2 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-black uppercase tracking-[0.2em] shadow-[0_0_30px_rgba(34,197,94,0.15)] animate-pulse">
-                        Direct Impact
-                      </div>
-                    </div>
-                    <p className="text-slate-300 text-lg leading-relaxed max-w-xl">
-                      This policy impacts <span className="text-white font-bold underline decoration-primary underline-offset-4">GST compliance for digital sellers</span> and platforms with cross-border transactions.
-                    </p>
+            ) : (
+              <>
+                {/* Header / Breadcrumb */}
+                <div className="flex items-center justify-between">
+                  <button onClick={() => router.push('/dashboard?tab=Results')} className="flex items-center gap-2 text-slate-500 hover:text-white font-bold transition-all group">
+                    <ChevronLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
+                    Back to All Results
+                  </button>
+                  <div className="flex items-center gap-3 text-slate-500 text-sm font-black uppercase tracking-widest">
+                    <History size={16} className="text-primary" />
+                    Analyzed on {new Date().toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
                   </div>
                 </div>
 
-                <div className="mt-8 lg:mt-0 flex items-center gap-8 lg:bg-white/[0.03] lg:p-10 lg:rounded-[40px] lg:border lg:border-white/5">
-                    <div className="relative w-40 h-40">
-                      <svg className="w-full h-full" viewBox="0 0 100 100">
-                        <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="8" className="text-white/5" />
-                        <motion.circle 
-                          cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="8" strokeLinecap="round" strokeDasharray="283" 
-                          initial={{ strokeDashoffset: 283 }} animate={{ strokeDashoffset: 283 - (283 * confidence) / 100 }} transition={{ duration: 1.5, ease: "easeOut" }}
-                          className="text-primary" 
-                        />
-                      </svg>
-                      <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <span className="text-4xl font-display font-black text-white">{confidence}%</span>
-                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest -mt-1">Confidence</span>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                       <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Last verified</p>
-                       <p className="text-lg font-bold text-white">2 days ago</p>
-                       <div className="flex items-center gap-2 text-[10px] font-bold text-primary bg-primary/10 px-3 py-1 rounded-full border border-primary/20">
-                          <CheckCircle2 size={12} />
-                          Human Certified
-                       </div>
-                    </div>
+                {/* ACTION BAR */}
+                <div className="bg-white/5 border border-white/10 p-2 md:p-3 rounded-2xl flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-2 md:gap-3">
+                    <button className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 active:scale-95 text-xs">
+                      <Bookmark size={16} />
+                      Bookmark
+                    </button>
+                    <button className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/5 text-white font-bold hover:bg-white/10 transition-all border border-white/10 active:scale-95 text-xs">
+                      <Share2 size={16} />
+                      Share
+                    </button>
+                  </div>
+                  <div className="h-6 w-px bg-white/10 hidden md:block" />
+                  <div className="flex items-center gap-2 md:gap-3">
+                    <button onClick={() => router.push('/dashboard?tab=Analyse')} className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-slate-400 font-bold hover:text-white hover:bg-white/5 transition-all text-xs">
+                      <RotateCcw size={16} />
+                      Re-run Analysis
+                    </button>
+                    <div className="h-6 w-px bg-white/10" />
+                    <button className="p-2 text-slate-500 hover:text-red-400 transition-all border border-transparent hover:bg-red-500/10 rounded-lg">
+                      <AlertCircle size={18} />
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <div className="mt-10 pt-10 border-t border-white/5 flex flex-wrap gap-4">
-                 <div className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2 text-xs font-bold text-slate-400">
-                    <Briefcase size={14} className="text-primary" /> Founder
-                 </div>
-                 <div className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2 text-xs font-bold text-slate-400">
-                    <MapPin size={14} className="text-primary" /> Delhi NCR
-                 </div>
-                 <div className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2 text-xs font-bold text-slate-400">
-                    <Sparkles size={14} className="text-primary" /> Fintech
-                 </div>
-              </div>
-            </FloatingCard>
+                <div className="space-y-2">
+                  <h1 className="text-5xl font-display font-black text-white tracking-tight leading-[1.1]">{analysis.policy.title || "Policy Analysis"}</h1>
+                  <p className="text-slate-400 text-lg max-w-3xl">{analysis.policy.summary}</p>
+                </div>
 
-            <div className="grid grid-cols-12 gap-8">
-              {/* 2. ACTION GRAPH (8 COLS) */}
-              <div className="col-span-12 lg:col-span-8">
-                <FloatingCard className="h-full">
-                  <SectionHeading 
-                    title="What should you do?" 
-                    subtitle="Step-by-step execution plan"
-                  />
-                  <div className="mt-12 relative">
-                    {/* The Graph */}
-                    <div className="space-y-12">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                        {/* Step 1 */}
-                        <motion.div initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} className="relative">
-                          <div className="bg-[#1a2333] border border-white/10 p-6 rounded-2xl hover:border-primary/50 transition-all group/step cursor-pointer shadow-xl relative z-10">
-                             <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-black mb-4 group-hover/step:scale-110 transition-transform">1</div>
-                             <h4 className="text-white font-bold mb-2">Update GST filing details</h4>
-                             <p className="text-sm text-slate-400 mb-4">Amend your previous season filings to match the new 2026 schema.</p>
-                             <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Deadline: <span className="text-white">Mar 30</span></div>
-                                <div className="text-[10px] font-black uppercase tracking-widest text-red-400 flex items-center gap-1"><AlertOctagon size={12}/> Critical</div>
-                             </div>
-                             <button className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-600 hover:text-white hover:bg-white/10 transition-all">
-                                <CheckCircle2 size={16} />
-                             </button>
+                {/* 1. APPLICABILITY CARD */}
+                <FloatingCard className="border-primary/30 bg-primary/[0.02]">
+                  <div className="lg:flex items-center justify-between gap-12">
+                    <div className="space-y-6 flex-1">
+                      <SectionHeading 
+                        title="Does this apply to you?" 
+                        tooltip="Based on your profile and source analysis"
+                      />
+                      <div className="flex flex-col gap-4">
+                        <div className="flex items-center gap-4">
+                          <div className="text-6xl font-display font-black text-white tracking-tighter">
+                            {analysis.relevance.applies ? "YES" : "NO"}
                           </div>
-                          {/* Connector to Step 2 */}
-                          <div className="hidden md:block absolute top-1/2 left-full w-12 h-px bg-white/10 -z-0">
-                             <motion.div initial={{ scaleX: 0 }} whileInView={{ scaleX: 1 }} viewport={{ once: true }} className="w-full h-full bg-primary origin-left" />
+                          <div className={cn(
+                            "px-5 py-2 rounded-full border text-xs font-black uppercase tracking-[0.2em] shadow-lg animate-pulse",
+                            analysis.relevance.applies 
+                              ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" 
+                              : "bg-slate-500/20 text-slate-400 border-slate-500/30"
+                          )}>
+                            {analysis.relevance.applies ? "Direct Impact" : "Low Relevance"}
                           </div>
-                        </motion.div>
-
-                        {/* Step 2 */}
-                        <motion.div initial={{ opacity: 0, x: 20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: 0.2 }} className="relative">
-                          <div className="bg-[#1a2333] border border-white/10 p-6 rounded-2xl hover:border-primary/50 transition-all group/step cursor-pointer shadow-xl relative z-10">
-                             <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-black mb-4 group-hover/step:scale-110 transition-transform">2</div>
-                             <h4 className="text-white font-bold mb-2">Recalculate Input Credit</h4>
-                             <p className="text-sm text-slate-400 mb-4">Validate your vendors&apos; compliance status using the Bulk API tool.</p>
-                             <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Deadline: <span className="text-white">Apr 15</span></div>
-                                <div className="text-[10px] font-black uppercase tracking-widest text-yellow-400 flex items-center gap-1"><History size={12}/> Ongoing</div>
-                             </div>
-                          </div>
-                          {/* Vertical Connector to Block 3 */}
-                          <div className="hidden md:block absolute top-[100%] left-1/2 w-px h-12 bg-white/10 -z-0">
-                             <motion.div initial={{ scaleY: 0 }} whileInView={{ scaleY: 1 }} viewport={{ once: true }} transition={{ delay: 0.4 }} className="w-full h-full bg-primary origin-top" />
-                          </div>
-                        </motion.div>
-                      </div>
-
-                      {/* Branching Row */}
-                      <div className="flex items-center justify-center pt-12">
-                         <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.6 }} className="max-w-md w-full relative">
-                            <div className="bg-red-500/10 border border-red-500/20 p-8 rounded-3xl hover:bg-red-500/20 transition-all group/risk cursor-pointer text-center">
-                               <div className="w-16 h-16 rounded-2xl bg-red-500/20 flex items-center justify-center text-red-400 mx-auto mb-6 group-hover/risk:scale-110 transition-transform shadow-[0_0_30px_rgba(239,68,68,0.2)]">
-                                  <AlertTriangle size={36} />
-                               </div>
-                               <h4 className="text-xl font-bold text-white mb-2 tracking-tight">Financial Risk Node</h4>
-                               <p className="text-sm text-slate-400 leading-relaxed">Failure to complete Step 2 results in immediate ₹18,000 penalty and audit flag.</p>
-                               <div className="mt-6 inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest text-red-400 bg-red-500/10 px-4 py-2 rounded-full border border-red-500/20">
-                                  Avoid ₹15,000 penalty
-                               </div>
+                        </div>
+                        <div className="space-y-2">
+                          {analysis.relevance.reason.map((reason, i) => (
+                            <div key={i} className="flex items-center gap-2 text-slate-300">
+                               <CheckCircle2 size={14} className="text-emerald-400" />
+                               <span className="text-sm font-medium">{reason}</span>
                             </div>
-                         </motion.div>
+                          ))}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </FloatingCard>
-              </div>
 
-              {/* 3. IMPACT PANEL (4 COLS) */}
-              <div className="col-span-12 lg:col-span-4">
-                <FloatingCard className="h-full flex flex-col">
-                  <SectionHeading 
-                    title="What&apos;s the impact?" 
-                    subtitle="Financial outcome of your decision"
-                  />
-                  <div className="flex-1 flex flex-col gap-6 mt-8">
-                    {/* Act */}
-                    <div className="bg-emerald-500/[0.03] border border-emerald-500/10 rounded-2xl p-6 relative group/act transition-all hover:bg-emerald-500/10">
-                       <div className="flex items-center justify-between mb-4">
-                          <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest px-3 py-1 rounded bg-emerald-500/10 border border-emerald-500/20">If you act</span>
-                          <TrendingUp size={20} className="text-emerald-400" />
-                       </div>
-                       <div className="text-4xl font-display font-black text-white mb-2 leading-none">Save ₹15,000</div>
-                       <p className="text-xs text-slate-400 font-medium">Compliance-backed savings & clean audit trail</p>
-                       <div className="absolute inset-x-0 bottom-0 h-1 bg-emerald-500/20 rounded-b-2xl overflow-hidden">
-                          <motion.div initial={{ x: "-100%" }} whileInView={{ x: 0 }} transition={{ duration: 1 }} className="h-full w-full bg-emerald-500" />
-                       </div>
-                    </div>
-
-                    {/* Ignore */}
-                    <div className="bg-red-500/[0.03] border border-red-500/10 rounded-2xl p-6 relative group/ignore transition-all hover:bg-red-500/10">
-                       <div className="flex items-center justify-between mb-4">
-                          <span className="text-[10px] font-black text-red-400 uppercase tracking-widest px-3 py-1 rounded bg-red-500/10 border border-red-500/20">If ignored</span>
-                          <AlertCircle size={20} className="text-red-400" />
-                       </div>
-                       <div className="text-4xl font-display font-black text-white mb-2 leading-none">Lose ₹18,000</div>
-                       <p className="text-xs text-slate-400 font-medium">Instant penalty + compound late fees</p>
-                       <div className="absolute inset-x-0 bottom-0 h-1 bg-red-400/20 rounded-b-2xl overflow-hidden">
-                          <motion.div initial={{ x: "-100%" }} whileInView={{ x: "40%" }} transition={{ duration: 1 }} className="h-full w-full bg-red-500" />
-                       </div>
-                    </div>
-
-                    <div className="mt-auto p-4 rounded-xl bg-white/5 border border-white/5 text-[10px] font-bold text-slate-500 leading-relaxed italic">
-                       &quot;Based on MSME tax slot for IT services (under ₹2Cr turnover)&quot;
+                    <div className="mt-8 lg:mt-0 flex items-center gap-8 lg:bg-white/[0.03] lg:p-10 lg:rounded-[40px] lg:border lg:border-white/5">
+                        <div className="relative w-40 h-40">
+                          <svg className="w-full h-full" viewBox="0 0 100 100">
+                            <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="8" className="text-white/5" />
+                            <motion.circle 
+                              cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="8" strokeLinecap="round" strokeDasharray="283" 
+                              initial={{ strokeDashoffset: 283 }} animate={{ strokeDashoffset: 283 - (283 * confidence) / 100 }} transition={{ duration: 1.5, ease: "easeOut" }}
+                              className="text-primary" 
+                            />
+                          </svg>
+                          <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            <span className="text-4xl font-display font-black text-white">{confidence}%</span>
+                            <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest -mt-1">Confidence</span>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                           <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Relevance Tier</p>
+                           <p className="text-lg font-bold text-white capitalize">{analysis.relevance.priority}</p>
+                           <div className="flex items-center gap-2 text-[10px] font-bold text-primary bg-primary/10 px-3 py-1 rounded-full border border-primary/20">
+                              <Sparkles size={12} />
+                              AI Computed
+                           </div>
+                        </div>
                     </div>
                   </div>
-                </FloatingCard>
-              </div>
-
-              {/* 4. MISSED OPPORTUNITIES (6 COLS) */}
-              <div className="col-span-12 lg:col-span-6">
-                <FloatingCard className="h-full">
-                  <SectionHeading 
-                    title="Opportunities you might miss" 
-                    subtitle="Additional benefits you qualify for"
-                  />
-                  <div className="grid gap-4 mt-8">
-                     {[
-                       { title: "GST Input Credit Benefit", desc: "You can claim additional ₹8,000 from unvalidated vendors.", val: "₹8,000" },
-                       { title: "Export Rebate (Rule 96A)", desc: "Eligible for Zero-Rated supply benefits on EU services.", val: "₹12,500" },
-                     ].map((item, i) => (
-                       <div key={i} className="bg-white/5 border border-white/10 p-6 rounded-2xl flex items-center justify-between group/opp hover:bg-white/10 hover:border-accent/40 transition-all hover:shadow-[0_0_20px_rgba(250,204,21,0.05)]">
-                          <div className="space-y-1">
-                             <h4 className="text-white font-bold">{item.title}</h4>
-                             <p className="text-xs text-slate-500">{item.desc}</p>
-                          </div>
-                          <div className="text-right">
-                             <div className="text-xl font-display font-black text-accent">{item.val}</div>
-                             <div className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Potential</div>
-                          </div>
+                  <div className="mt-10 pt-10 border-t border-white/5 flex flex-wrap gap-4">
+                     <div className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2 text-xs font-bold text-slate-400">
+                        <Briefcase size={14} className="text-primary" /> {userRole}
+                     </div>
+                     <div className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2 text-xs font-bold text-slate-400">
+                        <MapPin size={14} className="text-primary" /> {userLocation}
+                     </div>
+                     {analysis.policy.category.map((cat, i) => (
+                       <div key={i} className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2 text-xs font-bold text-slate-400 capitalize">
+                          <Shield size={14} className="text-primary" /> {cat}
                        </div>
                      ))}
                   </div>
                 </FloatingCard>
-              </div>
 
-              {/* 5. EXPLANATION PANEL (6 COLS) */}
-              <div className="col-span-12 lg:col-span-6">
-                <FloatingCard className="h-full">
-                  <div className="flex items-center justify-between mb-8">
-                    <SectionHeading 
-                      title="Explain this simply" 
-                    />
-                    <div className="flex p-1 bg-white/5 rounded-xl border border-white/10">
-                       <button onClick={() => setComplexity("Basic")} className={cn("px-4 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all", complexity === "Basic" ? "bg-white/10 text-white shadow-lg" : "text-slate-500 hover:text-slate-300")}>Basic</button>
-                       <button onClick={() => setComplexity("Detailed")} className={cn("px-4 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all", complexity === "Detailed" ? "bg-white/10 text-white shadow-lg" : "text-slate-500 hover:text-slate-300")}>Detailed</button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-6">
-                     <div className="flex items-start gap-4 animate-in fade-in slide-in-from-left-2">
-                        <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary flex-shrink-0 border border-primary/20 shadow-lg shadow-primary/10">
-                           <Sparkles size={20} />
-                        </div>
-                        <div className="p-5 bg-white/5 border border-white/10 rounded-2xl rounded-tl-none relative group/bubble hover:bg-white/10 transition-colors">
-                           <div className="text-sm leading-relaxed text-slate-300">
-                              {complexity === "Basic" ? (
-                                "This policy requires digital businesses to update their GST filings by the end of March. If you don't, you'll be charged a fine. You also have a chance to save money on tax credits you haven't claimed yet."
-                              ) : (
-                                "The GST Amendment Order 2026 (Section 14B) mandates all registered MSMEs in IT-enabled services to transition to the Schema V4 filing protocol. Failure to synchronize vendor invoices with the central repository prior to March 31 threshold triggers automatic penalties under the late-filing provision (Rule 42)."
-                              )}
-                           </div>
-                           <div className="mt-4 flex items-center justify-end">
-                              <button className="text-[10px] font-black text-primary uppercase tracking-widest flex items-center gap-1 hover:underline">
-                                 Read Full Clause <ArrowRight size={10} />
-                              </button>
-                           </div>
-                        </div>
-                     </div>
-                  </div>
-                </FloatingCard>
-              </div>
-
-              {/* 6. CITATIONS PANEL (FULL WIDTH) */}
-              <div className="col-span-12">
-                <FloatingCard>
-                  <SectionHeading 
-                    title="Source-backed insights" 
-                    subtitle="Every recommendation is linked to source text"
-                    tooltip="Linked directly to Official Amendment PDF released by Ministry of Finance"
-                  />
-                  <div className="mt-8 space-y-6">
-                     <div className="p-8 bg-background/50 border border-white/5 rounded-3xl relative overflow-hidden group/doc">
-                        <div className="absolute right-0 top-0 p-4 opacity-10 text-white"><FileText size={120} /></div>
-                        <div className="relative space-y-6">
-                           <p className="text-slate-400 font-mono text-sm leading-relaxed">
-                              &quot;...Notwithstanding any prior directives, all digital platforms operating as intermediaries under Section 2(w) of the IT Act must ENSURE that GSTIN-based reporting is completed in real-time. <span className="text-white bg-primary/20 px-2 py-0.5 rounded cursor-help hover:bg-primary/40 transition-colors border-b-2 border-primary">Eligible businesses must update filings before March 30</span> to maintain their Input Tax Credit (ITC) eligibility status...&quot;
-                           </p>
-                           <div className="flex items-center gap-4 text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">
-                              <Link href="#" className="flex items-center gap-2 text-primary hover:underline">
-                                 <ExternalLink size={12} />
-                                 Linked to Step 1
-                              </Link>
-                              <div className="w-1 h-1 rounded-full bg-slate-700" />
-                              Page 14, Para 3
-                           </div>
-                        </div>
-                     </div>
-                     <div className="p-8 bg-background/50 border border-white/5 rounded-3xl relative overflow-hidden group/doc">
-                        <div className="relative space-y-6">
-                           <p className="text-slate-400 font-mono text-sm leading-relaxed">
-                              &quot;...Failure to comply results in <span className="text-white bg-red-500/10 px-2 py-0.5 rounded cursor-help hover:bg-red-500/30 transition-colors border-b-2 border-red-500">immediate cessation of export benefits under Rule 96A</span> and a fixed penalty commensurate with monthly turnover...&quot;
-                           </p>
-                           <div className="flex items-center gap-4 text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">
-                              <Link href="#" className="flex items-center gap-2 text-red-400 hover:underline">
-                                 <ExternalLink size={12} />
-                                 Linked to Impact Panel
-                              </Link>
-                              <div className="w-1 h-1 rounded-full bg-slate-700" />
-                              Page 19, Clause 2.1
-                           </div>
-                        </div>
-                     </div>
-                  </div>
-                </FloatingCard>
-              </div>
-
-              {/* 7. TIMELINE / CONTEXT */}
-              <div className="col-span-12">
-                <FloatingCard>
-                   <SectionHeading title="What changed?" subtitle="Evolution of this policy over time" />
-                  <div className="mt-12 overflow-x-auto pb-6 -mx-4 px-4 custom-scrollbar">
-                     <div className="min-w-[800px] flex items-start gap-0 relative">
-                        {/* Timeline Line */}
-                        <div className="absolute top-8 inset-x-0 h-px bg-white/10 -z-0" />
+                <div className="grid grid-cols-12 gap-8">
+                  {/* 2. ACTION GRAPH (8 COLS) */}
+                  <div className="col-span-12 lg:col-span-8">
+                    <FloatingCard className="h-full">
+                      <SectionHeading 
+                        title="What should you do?" 
+                        subtitle="Personalized action plan"
+                      />
+                      <div className="mt-12 relative max-w-4xl mx-auto">
+                        {/* Flowchart Vertical Spine */}
+                        <div className="absolute left-[27px] top-6 bottom-6 w-px bg-gradient-to-b from-primary/50 via-white/10 to-transparent hidden sm:block" />
                         
-                        {[
-                          { date: "Oct 2025", title: "Original Rule", desc: "Standard filing cycle for all tech firms." },
-                          { date: "Jan 2026", title: "Amendment Draft", desc: "First mention of real-time schema update." },
-                          { date: "Mar 2026", title: "Current Policy", desc: "Mandatory enforcement for all MSMEs.", active: true },
-                          { date: "June 2026", title: "Compliance Audit", desc: "First wave of automated verification." },
-                        ].map((item, i) => (
-                          <div key={i} className="flex-1 px-8 relative group/time">
-                             <div className={cn("w-4 h-4 rounded-full border-2 border-background absolute top-6 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 transition-all", item.active ? "bg-primary scale-150 ring-4 ring-primary/20" : "bg-slate-700 group-hover/time:bg-slate-500")} />
-                             <div className="pt-12 text-center space-y-2">
-                                <div className={cn("text-[10px] font-black uppercase tracking-widest", item.active ? "text-primary" : "text-slate-600")}>{item.date}</div>
-                                <h4 className={cn("text-sm font-bold", item.active ? "text-white" : "text-slate-400")}>{item.title}</h4>
-                                <p className="text-[10px] text-slate-500 leading-relaxed font-bold">{item.desc}</p>
-                             </div>
-                          </div>
-                        ))}
-                     </div>
+                        <div className="space-y-8">
+                          {analysis.actions.map((action, i) => {
+                            const isDone = completedSteps.includes(i);
+                            return (
+                            <motion.div key={i} initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }} className="relative flex flex-col sm:flex-row items-start sm:gap-8 z-10 w-full">
+                              {/* Connector Node */}
+                              <div 
+                                onClick={() => toggleStep(i)}
+                                className={cn(
+                                  "w-14 h-14 rounded-full flex-shrink-0 hidden sm:flex items-center justify-center font-black cursor-pointer shadow-xl transition-all border-4 border-background relative group",
+                                  isDone 
+                                    ? "bg-emerald-500 text-white shadow-emerald-500/20 scale-110" 
+                                    : "bg-[#1a2333] border-white/10 text-slate-400 hover:border-primary/50 hover:text-primary"
+                                )}
+                              >
+                                {isDone ? <CheckCircle2 size={24} /> : i + 1}
+                                {/* Tooltip */}
+                                <div className="absolute top-[-40px] opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-[10px] px-3 py-1.5 rounded-lg whitespace-nowrap pointer-events-none">
+                                  {isDone ? "Mark Pending" : "Mark Complete"}
+                                </div>
+                              </div>
+
+                              {/* Action Card */}
+                              <div className={cn(
+                                "flex-1 border bg-[#1a2333] p-6 rounded-2xl transition-all shadow-xl relative w-full",
+                                isDone ? "border-emerald-500/30 opacity-70 bg-emerald-500/[0.02]" : "border-white/10 hover:border-primary/30"
+                              )}>
+                                 {/* Connector branch drawn if not mobile */}
+                                 <div className={cn("absolute right-full top-7 w-8 h-px hidden sm:block", isDone ? "bg-emerald-500/30" : "bg-white/10")} />
+                                 
+                                 <div className="flex items-center justify-between mb-2">
+                                    <h4 className={cn("font-bold transition-colors pr-4", isDone ? "text-emerald-400 line-through decoration-emerald-500/50" : "text-white")}>{action.title}</h4>
+                                    {/* Mobile Checkbox directly inline */}
+                                    <button onClick={() => toggleStep(i)} className={cn("sm:hidden w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-colors border-2", isDone ? "bg-emerald-500 border-emerald-500 text-white" : "border-white/20 text-transparent")}>
+                                      <CheckCircle2 size={16} className={cn(isDone ? "block" : "hidden")} />
+                                    </button>
+                                 </div>
+                                 
+                                 <p className="text-sm text-slate-400 leading-relaxed">{action.description}</p>
+                                 <div className="flex items-center justify-between mt-6 pt-4 border-t border-white/5">
+                                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Deadline: <span className={cn(isDone ? "text-emerald-500" : "text-white")}>{action.deadline || "Flexible"}</span></div>
+                                    {!isDone && <StatusTag status={analysis.relevance.priority === "high" ? "Action Required" : "Monitor"} />}
+                                    {isDone && <span className="text-xs font-bold text-emerald-500 uppercase tracking-widest bg-emerald-500/10 px-3 py-1 rounded-full flex items-center"><CheckCircle2 size={12} className="inline mr-1" /> Completed</span>}
+                                 </div>
+                              </div>
+                            </motion.div>
+                          )})}
+                        </div>
+                      </div>
+                    </FloatingCard>
                   </div>
-                </FloatingCard>
-              </div>
-            </div>
+
+                  {/* 3. IMPACT PANEL (4 COLS) */}
+                  <div className="col-span-12 lg:col-span-4">
+                    <FloatingCard className="h-full flex flex-col">
+                      <SectionHeading 
+                        title="What's the impact?" 
+                        subtitle="Outcome of your actions"
+                      />
+                      <div className="flex-1 flex flex-col gap-6 mt-8">
+                        {/* Act */}
+                        <div className="bg-emerald-500/[0.03] border border-emerald-500/10 rounded-2xl p-6 relative group/act transition-all hover:bg-emerald-500/10">
+                           <div className="flex items-center justify-between mb-4">
+                              <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest px-3 py-1 rounded bg-emerald-500/10 border border-emerald-500/20">If you act</span>
+                              <TrendingUp size={20} className="text-emerald-400" />
+                           </div>
+                           <div className="text-xl font-display font-bold text-white mb-2 leading-tight">{analysis.impact.ifAct}</div>
+                           <div className="absolute inset-x-0 bottom-0 h-1 bg-emerald-500/20 rounded-b-2xl overflow-hidden">
+                              <motion.div initial={{ x: "-100%" }} whileInView={{ x: 0 }} transition={{ duration: 1 }} className="h-full w-full bg-emerald-500" />
+                           </div>
+                        </div>
+
+                        {/* Ignore */}
+                        <div className="bg-red-500/[0.03] border border-red-500/10 rounded-2xl p-6 relative group/ignore transition-all hover:bg-red-500/10">
+                           <div className="flex items-center justify-between mb-4">
+                              <span className="text-[10px] font-black text-red-400 uppercase tracking-widest px-3 py-1 rounded bg-red-500/10 border border-red-500/20">If ignored</span>
+                              <AlertCircle size={20} className="text-red-400" />
+                           </div>
+                           <div className="text-xl font-display font-bold text-white mb-2 leading-tight">{analysis.impact.ifIgnore}</div>
+                           <div className="absolute inset-x-0 bottom-0 h-1 bg-red-400/20 rounded-b-2xl overflow-hidden">
+                              <motion.div initial={{ x: "-100%" }} whileInView={{ x: 0 }} transition={{ duration: 1 }} className="h-full w-full bg-red-500" />
+                           </div>
+                        </div>
+
+                        <div className="mt-auto p-4 rounded-xl bg-white/5 border border-white/5 text-[10px] font-bold text-slate-500 leading-relaxed italic">
+                           "Analyzed for: {userRole} in {userLocation}"
+                        </div>
+                      </div>
+                    </FloatingCard>
+                  </div>
+
+                  {/* 4. KEY POINTS (6 COLS) */}
+                  <div className="col-span-12 lg:col-span-6">
+                    <FloatingCard className="h-full">
+                      <SectionHeading 
+                        title="Key Points to Remember" 
+                        subtitle="Derived from policy metadata"
+                      />
+                      <div className="grid gap-4 mt-8">
+                         {analysis.policy.key_points.map((point, i) => (
+                           <div key={i} className="bg-white/5 border border-white/10 p-4 rounded-2xl flex items-start gap-4 hover:bg-white/10 transition-all">
+                              <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-primary text-[10px] font-bold flex-shrink-0">
+                                {i + 1}
+                              </div>
+                              <p className="text-sm text-slate-300 leading-relaxed">{point}</p>
+                           </div>
+                         ))}
+                      </div>
+                    </FloatingCard>
+                  </div>
+
+                  {/* 5. EXPLANATION PANEL (6 COLS) */}
+                  <div className="col-span-12 lg:col-span-6">
+                    <FloatingCard className="h-full">
+                      <div className="flex items-center justify-between mb-8">
+                        <SectionHeading 
+                          title="Explain this simply" 
+                        />
+                        <div className="flex p-1 bg-white/5 rounded-xl border border-white/10">
+                           <button onClick={() => setComplexity("Basic")} className={cn("px-4 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all", complexity === "Basic" ? "bg-white/10 text-white shadow-lg" : "text-slate-500 hover:text-slate-300")}>Basic</button>
+                           <button onClick={() => setComplexity("Detailed")} className={cn("px-4 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all", complexity === "Detailed" ? "bg-white/10 text-white shadow-lg" : "text-slate-500 hover:text-slate-300")}>Detailed</button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-6">
+                         <div className="flex items-start gap-4 animate-in fade-in slide-in-from-left-2">
+                            <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary flex-shrink-0 border border-primary/20 shadow-lg shadow-primary/10">
+                               <Sparkles size={20} />
+                            </div>
+                            <div className="p-5 bg-white/5 border border-white/10 rounded-2xl rounded-tl-none relative group/bubble hover:bg-white/10 transition-colors">
+                               <div className="text-sm leading-relaxed text-slate-300">
+                                  {complexity === "Basic" ? analysis.explanation.basic : analysis.explanation.detailed}
+                               </div>
+                            </div>
+                         </div>
+                      </div>
+                    </FloatingCard>
+                  </div>
+
+                  {/* 6. CITATIONS PANEL (FULL WIDTH) */}
+                  <div className="col-span-12">
+                    <FloatingCard>
+                      <SectionHeading 
+                        title="Source-backed insights" 
+                        subtitle="Excerpts used for this analysis"
+                      />
+                      <div className="mt-8 space-y-4">
+                         {analysis.policy.source_chunks.map((chunk, i) => (
+                           <div key={i} className="p-6 bg-background/50 border border-white/5 rounded-2xl relative overflow-hidden group/doc">
+                              <p className="text-slate-400 font-mono text-xs leading-relaxed italic">
+                                 "{chunk}"
+                              </p>
+                              <div className="mt-4 flex items-center gap-4 text-[10px] font-bold text-slate-600 uppercase tracking-widest">
+                                 <FileText size={12} className="text-primary" />
+                                 Source Quote #{i + 1}
+                              </div>
+                           </div>
+                         ))}
+                      </div>
+                    </FloatingCard>
+                  </div>
+                  {/* 7. TIMELINE / CONTEXT */}
+                  <div className="col-span-12">
+                    <FloatingCard>
+                       <SectionHeading title="What changed?" subtitle="Evolution of this policy over time" />
+                      <div className="mt-12 overflow-x-auto pb-6 -mx-4 px-4 custom-scrollbar">
+                         <div className="min-w-[800px] flex items-start gap-0 relative">
+                            {/* Timeline Line */}
+                            <div className="absolute top-8 inset-x-0 h-px bg-white/10 -z-0" />
+                            
+                            {[
+                              { date: "Oct 2025", title: "Original Rule", desc: "Standard filing cycle for all tech firms." },
+                              { date: "Jan 2026", title: "Amendment Draft", desc: "First mention of real-time schema update." },
+                              { date: "Mar 2026", title: "Current Policy", desc: "Mandatory enforcement for all MSMEs.", active: true },
+                              { date: "June 2026", title: "Compliance Audit", desc: "First wave of automated verification." },
+                            ].map((item, i) => (
+                              <div key={i} className="flex-1 px-8 relative group/time">
+                                 <div className={cn("w-4 h-4 rounded-full border-2 border-background absolute top-6 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 transition-all", item.active ? "bg-primary scale-150 ring-4 ring-primary/20" : "bg-slate-700 group-hover/time:bg-slate-500")} />
+                                 <div className="pt-12 text-center space-y-2">
+                                    <div className={cn("text-[10px] font-black uppercase tracking-widest", item.active ? "text-primary" : "text-slate-600")}>{item.date}</div>
+                                    <h4 className={cn("text-sm font-bold", item.active ? "text-white" : "text-slate-400")}>{item.title}</h4>
+                                    <p className="text-[10px] text-slate-500 leading-relaxed font-bold">{item.desc}</p>
+                                 </div>
+                              </div>
+                            ))}
+                         </div>
+                      </div>
+                    </FloatingCard>
+                  </div>
+                </div>
+              </>
+            )}
 
             {/* Global Footer (Contained within main div) */}
             <div className="mt-20 border-t border-white/5 pt-10 opacity-60">
