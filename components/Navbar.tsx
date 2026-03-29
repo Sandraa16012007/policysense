@@ -4,8 +4,11 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/context/AuthContext";
+import { logout } from "@/lib/authService";
 
 export default function Navbar() {
+  const { user } = useAuth();
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -62,18 +65,37 @@ export default function Navbar() {
 
         {/* Desktop Actions */}
         <div className="hidden md:flex items-center gap-4">
-          <Link
-            href="/auth"
-            className="text-sm font-medium text-foreground/80 hover:text-white transition-colors px-4 py-2 rounded-xl"
-          >
-            Login
-          </Link>
-          <Link
-            href="/auth"
-            className="text-sm font-medium bg-primary text-white px-5 py-2.5 rounded-xl hover:bg-primary/90 transition-all shadow-lg hover:shadow-primary/25"
-          >
-            Get Started
-          </Link>
+          {user ? (
+            <>
+              <Link
+                href="/dashboard"
+                className="text-sm font-medium text-foreground/80 hover:text-white transition-colors px-4 py-2 rounded-xl"
+              >
+                Dashboard
+              </Link>
+              <button
+                onClick={() => logout()}
+                className="text-sm font-medium bg-white/5 border border-white/10 text-white px-5 py-2.5 rounded-xl hover:bg-white/10 transition-all"
+              >
+                Logout
+              </button>
+            </>
+          ) : (
+            <>
+              <Link
+                href="/auth"
+                className="text-sm font-medium text-foreground/80 hover:text-white transition-colors px-4 py-2 rounded-xl"
+              >
+                Login
+              </Link>
+              <Link
+                href="/auth"
+                className="text-sm font-medium bg-primary text-white px-5 py-2.5 rounded-xl hover:bg-primary/90 transition-all shadow-lg hover:shadow-primary/25"
+              >
+                Get Started
+              </Link>
+            </>
+          )}
         </div>
 
         {/* Mobile Menu Toggle */}
@@ -99,22 +121,45 @@ export default function Navbar() {
                 {link.name}
               </Link>
             ))}
+            {user && (
+              <Link
+                href="/dashboard"
+                className="text-lg font-medium text-foreground/80 hover:text-white transition-colors"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Dashboard
+              </Link>
+            )}
           </nav>
           <div className="flex flex-col gap-3 pt-4 border-t border-white/10">
-            <Link
-              href="/auth"
-              className="w-full text-center text-sm font-medium text-foreground/80 hover:text-white transition-colors px-4 py-3 rounded-xl border border-white/10"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              Login
-            </Link>
-            <Link
-              href="/auth"
-              className="w-full text-center text-sm font-medium bg-primary text-white px-5 py-3 rounded-xl hover:bg-primary/90 transition-colors shadow-lg"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              Get Started
-            </Link>
+            {user ? (
+              <button
+                className="w-full text-center text-sm font-medium bg-white/5 border border-white/10 text-white px-5 py-3 rounded-xl scale-100 hover:scale-95 transition-transform"
+                onClick={() => {
+                  logout();
+                  setMobileMenuOpen(false);
+                }}
+              >
+                Logout
+              </button>
+            ) : (
+              <>
+                <Link
+                  href="/auth"
+                  className="w-full text-center text-sm font-medium text-foreground/80 hover:text-white transition-colors px-4 py-3 rounded-xl border border-white/10"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Login
+                </Link>
+                <Link
+                  href="/auth"
+                  className="w-full text-center text-sm font-medium bg-primary text-white px-5 py-3 rounded-xl hover:bg-primary/90 transition-colors shadow-lg"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Get Started
+                </Link>
+              </>
+            )}
           </div>
         </div>
       )}

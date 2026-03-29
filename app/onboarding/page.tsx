@@ -15,10 +15,15 @@ import {
   ChevronDown,
   Search,
   PartyPopper,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import OnboardingNavbar from "@/components/OnboardingNavbar";
 import Footer from "@/components/Footer";
+import { useAuth } from "@/context/AuthContext";
+import { createOrUpdateUserDoc, completeOnboarding, UserData } from "@/lib/userService";
+import { ProtectedRoute } from "@/components/AuthGuards";
+import { useEffect, useRef } from "react";
 
 /* ──────────────────────────── DATA ──────────────────────────── */
 
@@ -154,35 +159,45 @@ const STEP_META = [
 
 /* ──────────────────────── TYPES ──────────────────────── */
 
-interface FormData {
-  role: string;
-  experience: string;
-  goals: string[];
-  // Step 2
-  industry: string;
-  businessType: string;
-  subSector: string;
-  employmentType: string;
-  department: string;
-  investmentTypes: string[];
-  fieldOfStudy: string;
-  // Step 3
-  country: string;
-  state: string;
-  city: string;
-  // Step 4
-  revenueRange: string;
-  incomeRange: string;
-  portfolioSize: string;
-  registrations: string[];
-  teamSize: string;
-  // Step 5
-  riskPreference: string;
-  timeSensitivity: string;
-  decisionStyle: string;
-  knowledgeLevel: string;
-  language: string;
-  interests: string[];
+type Role = "founder" | "msme" | "investor" | "salaried" | "government" | "student" | "freelancer";
+type ExperienceLevel = "beginner" | "intermediate" | "advanced";
+
+interface OnboardingFormData {
+  basic: {
+    name: string;
+    role: Role | "";
+    experienceLevel: ExperienceLevel;
+    primaryGoals: string[];
+  };
+  workContext: {
+    industry: string;
+    businessType: string;
+    subSector: string;
+    employmentType: string;
+    department: string;
+    investmentTypes: string[];
+    fieldOfStudy: string;
+  };
+  location: {
+    country: string;
+    state: string;
+    city: string;
+  };
+  financial: {
+    revenueRange: string;
+    incomeRange: string;
+    portfolioSize: string;
+    registrations: string[];
+    teamSize: string;
+  };
+  preferences: {
+    riskPreference: string;
+    timeSensitivity: string;
+    decisionStyle: string;
+    knowledgeLevel: string;
+    language: string;
+    interests: string[];
+  };
 }
 
 /* ──────────────── REUSABLE UI PIECES ──────────────── */
@@ -577,63 +592,118 @@ function StepSection({
 /* ──────────────────────── MAIN PAGE ──────────────────────── */
 
 export default function OnboardingPage() {
+  const { user, userData, refreshUserData } = useAuth();
   const [step, setStep] = useState(1);
   const [direction, setDirection] = useState(1); // 1 = forward, -1 = back
-  const [formData, setFormData] = useState<FormData>({
-    role: "",
-    experience: "intermediate",
-    goals: [],
-    industry: "",
-    businessType: "",
-    subSector: "",
-    employmentType: "",
-    department: "",
-    investmentTypes: [],
-    fieldOfStudy: "",
-    country: "India",
-    state: "",
-    city: "",
-    revenueRange: "",
-    incomeRange: "",
-    portfolioSize: "",
-    registrations: [],
-    teamSize: "",
-    riskPreference: "",
-    timeSensitivity: "",
-    decisionStyle: "",
-    knowledgeLevel: "",
-    language: "English",
-    interests: [],
+  const [isFinishing, setIsFinishing] = useState(false);
+  
+  const [formData, setFormData] = useState<OnboardingFormData>({
+    basic: {
+      name: "",
+      role: "",
+      experienceLevel: "intermediate",
+      primaryGoals: [],
+    },
+    workContext: {
+      industry: "",
+      businessType: "",
+      subSector: "",
+      employmentType: "",
+      department: "",
+      investmentTypes: [],
+      fieldOfStudy: "",
+    },
+    location: {
+      country: "India",
+      state: "",
+      city: "",
+    },
+    financial: {
+      revenueRange: "",
+      incomeRange: "",
+      portfolioSize: "",
+      registrations: [],
+      teamSize: "",
+    },
+    preferences: {
+      riskPreference: "",
+      timeSensitivity: "",
+      decisionStyle: "",
+      knowledgeLevel: "",
+      language: "English",
+      interests: [],
+    },
   });
 
+  // Load existing data if available
+  useEffect(() => {
+    if (userData) {
+      setFormData(prev => ({
+        ...prev,
+        basic: { ...prev.basic, ...userData.basic },
+        workContext: { ...prev.workContext, ...userData.workContext },
+        location: { ...prev.location, ...userData.location },
+        financial: { ...prev.financial, ...userData.financial },
+        preferences: { ...prev.preferences, ...userData.preferences },
+      }));
+    }
+  }, [userData]);
+
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const debouncedSave = useCallback((data: Partial<UserData>) => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(async () => {
+      if (user) {
+        await createOrUpdateUserDoc(user.uid, data);
+        console.log("Auto-saved to Firestore");
+      }
+    }, 1000);
+  }, [user]);
+
   const update = useCallback(
-    <K extends keyof FormData>(key: K, value: FormData[K]) => {
-      setFormData((prev) => ({ ...prev, [key]: value }));
+    <S extends keyof OnboardingFormData, K extends keyof OnboardingFormData[S]>(
+      section: S,
+      key: K,
+      value: OnboardingFormData[S][K]
+    ) => {
+      setFormData((prev) => {
+        const newData = {
+          ...prev,
+          [section]: {
+            ...prev[section],
+            [key]: value,
+          },
+        };
+        // Auto-save logic
+        debouncedSave({ [section]: newData[section] });
+        return newData;
+      });
     },
-    []
+    [debouncedSave]
   );
 
   const isBusinessUser = ["founder", "msme", "freelancer"].includes(
-    formData.role
+    formData.basic.role
   );
-  const isSalariedGovt = ["salaried", "government"].includes(formData.role);
-  const isInvestor = formData.role === "investor";
-  const isStudent = formData.role === "student";
+  const isSalariedGovt = ["salaried", "government"].includes(formData.basic.role);
+  const isInvestor = formData.basic.role === "investor";
+  const isStudent = formData.basic.role === "student";
 
   const TOTAL_STEPS = 5;
 
   const canProceed = () => {
     switch (step) {
       case 1:
-        return formData.role !== "" && formData.goals.length > 0;
+        return formData.basic.name.trim() !== "" && formData.basic.role !== "" && formData.basic.primaryGoals.length > 0;
       case 2:
-        if (isBusinessUser) return formData.industry !== "";
-        if (isSalariedGovt) return formData.employmentType !== "";
-        if (isInvestor) return formData.investmentTypes.length > 0;
-        if (isStudent) return formData.fieldOfStudy !== "";
+        if (isBusinessUser) return formData.workContext.industry !== "";
+        if (isSalariedGovt) return formData.workContext.employmentType !== "";
+        if (isInvestor) return formData.workContext.investmentTypes.length > 0;
+        if (isStudent) return formData.workContext.fieldOfStudy !== "";
         return true;
       case 3:
-        return formData.state !== "";
+        return formData.location.state !== "";
       case 4:
         return true; // financial context always allows proceeding
       case 5:
@@ -643,8 +713,18 @@ export default function OnboardingPage() {
     }
   };
 
-  const goNext = () => {
-    if (step <= TOTAL_STEPS) {
+  const goNext = async () => {
+    if (step === TOTAL_STEPS) {
+      setIsFinishing(true);
+      if (user) {
+        await createOrUpdateUserDoc(user.uid, formData as any);
+        await completeOnboarding(user.uid);
+        await refreshUserData();
+      }
+      setDirection(1);
+      setStep((s) => s + 1);
+      setIsFinishing(false);
+    } else if (step <= TOTAL_STEPS) {
       setDirection(1);
       setStep((s) => s + 1);
     }
@@ -673,19 +753,29 @@ export default function OnboardingPage() {
 
   const renderStep1 = () => (
     <div className="flex flex-col gap-8">
+      <StepSection label="Full Name">
+        <input
+          type="text"
+          value={formData.basic.name}
+          onChange={(e) => update("basic", "name", e.target.value)}
+          placeholder="Enter your name"
+          className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3.5 text-sm text-white placeholder:text-foreground/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/25 transition-all"
+        />
+      </StepSection>
+
       <StepSection label="What best describes you?">
         <CardRadio
           options={ROLES}
-          value={formData.role}
-          onChange={(v) => update("role", v)}
+          value={formData.basic.role}
+          onChange={(v) => update("basic", "role", v as Role)}
         />
       </StepSection>
 
       <StepSection label="Your experience with finance/policies">
         <SegmentedControl
           options={EXPERIENCE_LEVELS}
-          value={formData.experience}
-          onChange={(v) => update("experience", v)}
+          value={formData.basic.experienceLevel}
+          onChange={(v) => update("basic", "experienceLevel", v as ExperienceLevel)}
         />
       </StepSection>
 
@@ -695,8 +785,8 @@ export default function OnboardingPage() {
       >
         <ChipSelect
           options={PRIMARY_GOALS}
-          selected={formData.goals}
-          onChange={(v) => update("goals", v)}
+          selected={formData.basic.primaryGoals}
+          onChange={(v) => update("basic", "primaryGoals", v)}
           max={3}
         />
       </StepSection>
@@ -710,8 +800,8 @@ export default function OnboardingPage() {
           <StepSection label="Your Industry">
             <SelectDropdown
               options={INDUSTRIES}
-              value={formData.industry}
-              onChange={(v) => update("industry", v)}
+              value={formData.workContext.industry}
+              onChange={(v) => update("workContext", "industry", v)}
               placeholder="Select your industry"
               searchable
             />
@@ -720,16 +810,16 @@ export default function OnboardingPage() {
           <StepSection label="Business Type">
             <RadioGroup
               options={BUSINESS_TYPES}
-              value={formData.businessType}
-              onChange={(v) => update("businessType", v)}
+              value={formData.workContext.businessType}
+              onChange={(v) => update("workContext", "businessType", v)}
             />
           </StepSection>
 
           <StepSection label="Sub-sector (optional)">
             <input
               type="text"
-              value={formData.subSector}
-              onChange={(e) => update("subSector", e.target.value)}
+              value={formData.workContext.subSector}
+              onChange={(e) => update("workContext", "subSector", e.target.value)}
               placeholder="e.g., D2C skincare, SaaS, logistics"
               className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3.5 text-sm text-white placeholder:text-foreground/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/25 transition-all"
             />
@@ -742,16 +832,16 @@ export default function OnboardingPage() {
           <StepSection label="Employment Type">
             <RadioGroup
               options={EMPLOYMENT_TYPES}
-              value={formData.employmentType}
-              onChange={(v) => update("employmentType", v)}
+              value={formData.workContext.employmentType}
+              onChange={(v) => update("workContext", "employmentType", v)}
             />
           </StepSection>
 
           <StepSection label="Industry / Department">
             <input
               type="text"
-              value={formData.department}
-              onChange={(e) => update("department", e.target.value)}
+              value={formData.workContext.department}
+              onChange={(e) => update("workContext", "department", e.target.value)}
               placeholder="e.g., IT, Banking, Railways, Education"
               className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3.5 text-sm text-white placeholder:text-foreground/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/25 transition-all"
             />
@@ -763,8 +853,8 @@ export default function OnboardingPage() {
         <StepSection label="Type of Investments">
           <ChipSelect
             options={INVESTMENT_TYPES}
-            selected={formData.investmentTypes}
-            onChange={(v) => update("investmentTypes", v)}
+            selected={formData.workContext.investmentTypes}
+            onChange={(v) => update("workContext", "investmentTypes", v)}
           />
         </StepSection>
       )}
@@ -773,8 +863,8 @@ export default function OnboardingPage() {
         <StepSection label="Field of Study">
           <input
             type="text"
-            value={formData.fieldOfStudy}
-            onChange={(e) => update("fieldOfStudy", e.target.value)}
+            value={formData.workContext.fieldOfStudy}
+            onChange={(e) => update("workContext", "fieldOfStudy", e.target.value)}
             placeholder="e.g., Engineering, Commerce, Law"
             className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3.5 text-sm text-white placeholder:text-foreground/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/25 transition-all"
           />
@@ -788,8 +878,8 @@ export default function OnboardingPage() {
       <StepSection label="Country">
         <SelectDropdown
           options={["India"]}
-          value={formData.country}
-          onChange={(v) => update("country", v)}
+          value={formData.location.country}
+          onChange={(v) => update("location", "country", v)}
           placeholder="Select country"
         />
       </StepSection>
@@ -797,8 +887,8 @@ export default function OnboardingPage() {
       <StepSection label="State">
         <SelectDropdown
           options={INDIAN_STATES}
-          value={formData.state}
-          onChange={(v) => update("state", v)}
+          value={formData.location.state}
+          onChange={(v) => update("location", "state", v)}
           placeholder="Select your state"
           searchable
         />
@@ -807,8 +897,8 @@ export default function OnboardingPage() {
       <StepSection label="City (optional)">
         <input
           type="text"
-          value={formData.city}
-          onChange={(e) => update("city", e.target.value)}
+          value={formData.location.city}
+          onChange={(e) => update("location", "city", e.target.value)}
           placeholder="e.g., Delhi, Bangalore"
           className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3.5 text-sm text-white placeholder:text-foreground/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/25 transition-all"
         />
@@ -829,8 +919,8 @@ export default function OnboardingPage() {
                 "₹10Cr+",
                 "Not sure",
               ]}
-              value={formData.revenueRange}
-              onChange={(v) => update("revenueRange", v)}
+              value={formData.financial.revenueRange}
+              onChange={(v) => update("financial", "revenueRange", v)}
               placeholder="Select range"
             />
           </StepSection>
@@ -838,16 +928,16 @@ export default function OnboardingPage() {
           <StepSection label="Are you registered for any of these?">
             <ChecklistSelect
               options={REGISTRATIONS}
-              selected={formData.registrations}
-              onChange={(v) => update("registrations", v)}
+              selected={formData.financial.registrations}
+              onChange={(v) => update("financial", "registrations", v)}
             />
           </StepSection>
 
           <StepSection label="Team Size">
             <SelectDropdown
               options={["Just me", "2–10", "10–50", "50+"]}
-              value={formData.teamSize}
-              onChange={(v) => update("teamSize", v)}
+              value={formData.financial.teamSize}
+              onChange={(v) => update("financial", "teamSize", v)}
               placeholder="Select team size"
             />
           </StepSection>
@@ -858,8 +948,8 @@ export default function OnboardingPage() {
         <StepSection label="Annual Income Range">
           <SelectDropdown
             options={["Below ₹5L", "₹5L – ₹15L", "₹15L – ₹30L", "₹30L+"]}
-            value={formData.incomeRange}
-            onChange={(v) => update("incomeRange", v)}
+            value={formData.financial.incomeRange}
+            onChange={(v) => update("financial", "incomeRange", v)}
             placeholder="Select range"
           />
         </StepSection>
@@ -869,8 +959,8 @@ export default function OnboardingPage() {
         <StepSection label="Portfolio Size (optional)">
           <SelectDropdown
             options={["< ₹5L", "₹5L – ₹50L", "₹50L+"]}
-            value={formData.portfolioSize}
-            onChange={(v) => update("portfolioSize", v)}
+            value={formData.financial.portfolioSize}
+            onChange={(v) => update("financial", "portfolioSize", v)}
             placeholder="Select range"
           />
         </StepSection>
@@ -900,40 +990,40 @@ export default function OnboardingPage() {
             "Balanced",
             "Optimize for gains",
           ]}
-          value={formData.riskPreference}
-          onChange={(v) => update("riskPreference", v)}
+          value={formData.preferences.riskPreference}
+          onChange={(v) => update("preferences", "riskPreference", v)}
         />
       </StepSection>
 
       <StepSection label="How quickly do you act on updates?">
         <RadioGroup
           options={["Immediately", "Within a week", "Only if critical"]}
-          value={formData.timeSensitivity}
-          onChange={(v) => update("timeSensitivity", v)}
+          value={formData.preferences.timeSensitivity}
+          onChange={(v) => update("preferences", "timeSensitivity", v)}
         />
       </StepSection>
 
       <StepSection label="How do you make decisions?">
         <RadioGroup
           options={["Data-driven", "Expert-advised", "Quick & practical"]}
-          value={formData.decisionStyle}
-          onChange={(v) => update("decisionStyle", v)}
+          value={formData.preferences.decisionStyle}
+          onChange={(v) => update("preferences", "decisionStyle", v)}
         />
       </StepSection>
 
       <StepSection label="Policy/legal familiarity">
         <RadioGroup
           options={["Not familiar", "Somewhat familiar", "Comfortable"]}
-          value={formData.knowledgeLevel}
-          onChange={(v) => update("knowledgeLevel", v)}
+          value={formData.preferences.knowledgeLevel}
+          onChange={(v) => update("preferences", "knowledgeLevel", v)}
         />
       </StepSection>
 
       <StepSection label="Preferred language">
         <SelectDropdown
           options={["English", "Hindi"]}
-          value={formData.language}
-          onChange={(v) => update("language", v)}
+          value={formData.preferences.language}
+          onChange={(v) => update("preferences", "language", v)}
           placeholder="Select language"
         />
       </StepSection>
@@ -941,8 +1031,8 @@ export default function OnboardingPage() {
       <StepSection label="Topics you care about (optional)">
         <ChipSelect
           options={INTEREST_TOPICS}
-          selected={formData.interests}
-          onChange={(v) => update("interests", v)}
+          selected={formData.preferences.interests}
+          onChange={(v) => update("preferences", "interests", v)}
         />
       </StepSection>
     </div>
@@ -1041,188 +1131,196 @@ export default function OnboardingPage() {
   ];
 
   return (
-    <div className="min-h-[100dvh] flex flex-col bg-background text-foreground overflow-x-hidden">
-      {/* Background Gradients */}
-      <div className="fixed top-0 left-1/3 w-[50rem] h-[50rem] bg-primary/10 rounded-full blur-[150px] -z-10 pointer-events-none" />
-      <div className="fixed bottom-0 right-1/4 w-[35rem] h-[35rem] bg-accent/8 rounded-full blur-[120px] -z-10 pointer-events-none" />
+    <ProtectedRoute>
+      <div className="min-h-[100dvh] flex flex-col bg-background text-foreground overflow-x-hidden">
+        {/* Background Gradients */}
+        <div className="fixed top-0 left-1/3 w-[50rem] h-[50rem] bg-primary/10 rounded-full blur-[150px] -z-10 pointer-events-none" />
+        <div className="fixed bottom-0 right-1/4 w-[35rem] h-[35rem] bg-accent/8 rounded-full blur-[120px] -z-10 pointer-events-none" />
 
-      <OnboardingNavbar />
+        <OnboardingNavbar />
 
-      {/* Main content */}
-      <main className="flex-1 flex flex-col items-center pt-28 md:pt-32 pb-16 px-4 sm:px-6">
-        <div className="w-full max-w-2xl">
-          {step <= TOTAL_STEPS && (
-            <>
-              {/* ── Progress Bar ── */}
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mb-8"
-              >
-                {/* Step pills */}
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    {STEP_META.map((s, i) => {
-                      const Icon = s.icon;
-                      const isActive = i + 1 === step;
-                      const isDone = i + 1 < step;
-                      return (
-                        <div
-                          key={i}
-                          className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-300",
-                            isActive
-                              ? "bg-primary/15 border border-primary/30 text-primary"
-                              : isDone
-                              ? "bg-white/5 text-foreground/50"
-                              : "text-foreground/25"
-                          )}
-                        >
-                          {isDone ? (
-                            <Check size={12} className="text-green-400" />
-                          ) : (
-                            <Icon size={12} />
-                          )}
-                          <span className="hidden sm:inline">{s.label}</span>
-                        </div>
-                      );
-                    })}
+        {/* Main content */}
+        <main className="flex-1 flex flex-col items-center pt-28 md:pt-32 pb-16 px-4 sm:px-6">
+          <div className="w-full max-w-2xl">
+            {step <= TOTAL_STEPS && (
+              <>
+                {/* ── Progress Bar ── */}
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-8"
+                >
+                  {/* Step pills */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      {STEP_META.map((s, i) => {
+                        const Icon = s.icon;
+                        const isActive = i + 1 === step;
+                        const isDone = i + 1 < step;
+                        return (
+                          <div
+                            key={i}
+                            className={cn(
+                              "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-300",
+                              isActive
+                                ? "bg-primary/15 border border-primary/30 text-primary"
+                                : isDone
+                                ? "bg-white/5 text-foreground/50"
+                                : "text-foreground/25"
+                            )}
+                          >
+                            {isDone ? (
+                              <Check size={12} className="text-green-400" />
+                            ) : (
+                              <Icon size={12} />
+                            )}
+                            <span className="hidden sm:inline">{s.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <span className="text-xs text-foreground/30">
+                      ~30 seconds
+                    </span>
                   </div>
-                  <span className="text-xs text-foreground/30">
-                    ~30 seconds
-                  </span>
-                </div>
 
-                {/* Bar */}
-                <div className="h-1 bg-white/[0.06] rounded-full overflow-hidden">
-                  <motion.div
-                    className="h-full bg-gradient-to-r from-primary to-accent rounded-full"
-                    initial={{ width: 0 }}
-                    animate={{
-                      width: `${(step / TOTAL_STEPS) * 100}%`,
-                    }}
-                    transition={{ duration: 0.4, ease: "easeInOut" }}
-                  />
-                </div>
-              </motion.div>
-            </>
-          )}
+                  {/* Bar */}
+                  <div className="h-1 bg-white/[0.06] rounded-full overflow-hidden">
+                    <motion.div
+                      className="h-full bg-gradient-to-r from-primary to-accent rounded-full"
+                      initial={{ width: 0 }}
+                      animate={{
+                        width: `${(step / TOTAL_STEPS) * 100}%`,
+                      }}
+                      transition={{ duration: 0.4, ease: "easeInOut" }}
+                    />
+                  </div>
+                </motion.div>
+              </>
+            )}
 
-          {/* ── Step Card ── */}
-          <div className="relative bg-background/50 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-2xl overflow-hidden">
-            {/* Card decorations */}
-            <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
-            <div className="absolute -top-20 -right-20 w-40 h-40 bg-primary/8 rounded-full blur-[60px] pointer-events-none" />
-            <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-accent/8 rounded-full blur-[60px] pointer-events-none" />
+            {/* ── Step Card ── */}
+            <div className="relative bg-background/50 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-2xl overflow-hidden">
+              {/* Card decorations */}
+              <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+              <div className="absolute -top-20 -right-20 w-40 h-40 bg-primary/8 rounded-full blur-[60px] pointer-events-none" />
+              <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-accent/8 rounded-full blur-[60px] pointer-events-none" />
 
-            <div className="relative z-10 p-6 sm:p-8 md:p-10">
-              <AnimatePresence mode="wait" custom={direction}>
-                {step <= TOTAL_STEPS ? (
-                  <motion.div
-                    key={step}
-                    custom={direction}
-                    variants={variants}
-                    initial="enter"
-                    animate="center"
-                    exit="exit"
-                    transition={{ duration: 0.3, ease: "easeInOut" }}
-                  >
-                    {/* Step heading */}
-                    <div className="mb-8">
-                      <div className="flex items-center gap-2 text-xs text-primary font-semibold uppercase tracking-widest mb-2">
-                        <div className="w-5 h-5 rounded-full bg-primary/15 flex items-center justify-center text-[10px]">
-                          {step}
+              <div className="relative z-10 p-6 sm:p-8 md:p-10">
+                <AnimatePresence mode="wait" custom={direction}>
+                  {step <= TOTAL_STEPS ? (
+                    <motion.div
+                      key={step}
+                      custom={direction}
+                      variants={variants}
+                      initial="enter"
+                      animate="center"
+                      exit="exit"
+                      transition={{ duration: 0.3, ease: "easeInOut" }}
+                    >
+                      {/* Step heading */}
+                      <div className="mb-8">
+                        <div className="flex items-center gap-2 text-xs text-primary font-semibold uppercase tracking-widest mb-2">
+                          <div className="w-5 h-5 rounded-full bg-primary/15 flex items-center justify-center text-[10px]">
+                            {step}
+                          </div>
+                          Step {step} of {TOTAL_STEPS}
                         </div>
-                        Step {step} of {TOTAL_STEPS}
+                        <h1 className="text-2xl md:text-3xl font-display font-bold mb-2">
+                          {stepHeadings[step - 1].title}
+                        </h1>
+                        <p className="text-foreground/50 text-sm">
+                          {stepHeadings[step - 1].subtitle}
+                        </p>
                       </div>
-                      <h1 className="text-2xl md:text-3xl font-display font-bold mb-2">
-                        {stepHeadings[step - 1].title}
-                      </h1>
-                      <p className="text-foreground/50 text-sm">
-                        {stepHeadings[step - 1].subtitle}
-                      </p>
-                    </div>
 
-                    {/* Step content */}
-                    {stepContent[step - 1]()}
+                      {/* Step content */}
+                      {stepContent[step - 1]()}
 
-                    {/* Privacy note */}
-                    <div className="mt-8 flex items-center gap-2 text-xs text-foreground/30">
-                      <div className="w-1 h-1 rounded-full bg-green-400" />
-                      We only use this to personalize your insights
-                    </div>
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="final"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    {renderFinalScreen()}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                      {/* Privacy note */}
+                      <div className="mt-8 flex items-center gap-2 text-xs text-foreground/30">
+                        <div className="w-1 h-1 rounded-full bg-green-400" />
+                        We only use this to personalize your insights
+                      </div>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="final"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      {renderFinalScreen()}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
-              {/* ── Navigation Buttons ── */}
-              {step <= TOTAL_STEPS && (
-                <div className="flex items-center justify-between mt-8 pt-6 border-t border-white/[0.06]">
-                  <button
-                    type="button"
-                    onClick={goBack}
-                    disabled={step === 1}
-                    className={cn(
-                      "flex items-center gap-2 text-sm font-medium px-5 py-3 rounded-xl transition-all",
-                      step === 1
-                        ? "text-foreground/20 cursor-not-allowed"
-                        : "text-foreground/60 hover:text-white hover:bg-white/[0.06]"
-                    )}
-                  >
-                    <ArrowLeft size={16} />
-                    Back
-                  </button>
-
-                  <div className="flex items-center gap-3">
-                    {step === TOTAL_STEPS && (
-                      <button
-                        type="button"
-                        onClick={goNext}
-                        className="text-sm font-medium text-foreground/40 hover:text-foreground/60 transition-colors px-4 py-3"
-                      >
-                        Skip
-                      </button>
-                    )}
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
+                {/* ── Navigation Buttons ── */}
+                {step <= TOTAL_STEPS && (
+                  <div className="flex items-center justify-between mt-8 pt-6 border-t border-white/[0.06]">
+                    <button
                       type="button"
-                      onClick={goNext}
-                      disabled={!canProceed()}
+                      onClick={goBack}
+                      disabled={step === 1 || isFinishing}
                       className={cn(
-                        "flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all group",
-                        canProceed()
-                          ? "bg-primary text-white shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:bg-primary/90"
-                          : "bg-white/[0.06] text-foreground/30 cursor-not-allowed"
+                        "flex items-center gap-2 text-sm font-medium px-5 py-3 rounded-xl transition-all",
+                        (step === 1 || isFinishing)
+                          ? "text-foreground/20 cursor-not-allowed"
+                          : "text-foreground/60 hover:text-white hover:bg-white/[0.06]"
                       )}
                     >
-                      {step === TOTAL_STEPS ? "Finish" : "Continue"}
-                      <ArrowRight
-                        size={16}
+                      <ArrowLeft size={16} />
+                      Back
+                    </button>
+
+                    <div className="flex items-center gap-3">
+                      {step === TOTAL_STEPS && !isFinishing && (
+                        <button
+                          type="button"
+                          onClick={() => goNext()}
+                          className="text-sm font-medium text-foreground/40 hover:text-foreground/60 transition-colors px-4 py-3"
+                        >
+                          Skip
+                        </button>
+                      )}
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        type="button"
+                        onClick={goNext}
+                        disabled={!canProceed() || isFinishing}
                         className={cn(
-                          "transition-transform",
-                          canProceed() && "group-hover:translate-x-1"
+                          "flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all group min-w-[120px] justify-center",
+                          (canProceed() && !isFinishing)
+                            ? "bg-primary text-white shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:bg-primary/90"
+                            : "bg-white/[0.06] text-foreground/30 cursor-not-allowed"
                         )}
-                      />
-                    </motion.button>
+                      >
+                        {isFinishing ? (
+                          <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                          <>
+                            {step === TOTAL_STEPS ? "Finish" : "Continue"}
+                            <ArrowRight
+                              size={16}
+                              className={cn(
+                                "transition-transform",
+                                canProceed() && "group-hover:translate-x-1"
+                              )}
+                            />
+                          </>
+                        )}
+                      </motion.button>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      </main>
+        </main>
 
-      <Footer />
-    </div>
+        <Footer />
+      </div>
+    </ProtectedRoute>
   );
 }

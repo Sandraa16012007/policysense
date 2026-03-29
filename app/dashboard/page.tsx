@@ -35,6 +35,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Footer from "@/components/Footer";
+import { useAuth } from "@/context/AuthContext";
+import { logout } from "@/lib/authService";
+import { ProtectedRoute } from "@/components/AuthGuards";
+import { Loader2 } from "lucide-react";
 
 /* ──────────────────────── TYPES ──────────────────────── */
 
@@ -179,9 +183,26 @@ function Card({ title, children, className }: { title?: string; children: React.
 }
 
 export default function DashboardPage() {
+  const { user, userData, loading } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>("General");
   const [analyseType, setAnalyseType] = useState<AnalyseType>("text");
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      window.location.href = "/";
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
+  };
+
+  const userName = userData?.basic?.name || user?.displayName || user?.email?.split('@')[0] || "User";
+  const userEmail = user?.email || "";
+  const userRole = userData?.basic?.role || "Member";
+  const userLocation = userData?.location?.state 
+    ? `${userData.location.city ? userData.location.city + ", " : ""}${userData.location.state}`
+    : "Location not set";
 
   // Sync scroll lock or profile menu state
   useEffect(() => {
@@ -201,7 +222,7 @@ export default function DashboardPage() {
         <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full -z-10 opacity-50 group-hover:opacity-70 transition-opacity" />
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white/5 backdrop-blur-2xl border border-white/10 p-10 rounded-3xl shadow-2xl">
           <div>
-            <h1 className="text-4xl font-display font-bold text-white tracking-tight mb-3">Welcome back</h1>
+            <h1 className="text-4xl font-display font-bold text-white tracking-tight mb-3">Welcome back, {userName.split(' ')[0]}</h1>
             <p className="text-slate-400 text-lg">Here’s what needs your attention today.</p>
           </div>
           <button
@@ -579,8 +600,9 @@ export default function DashboardPage() {
   /* ──────────────────────── MAIN LAYOUT ──────────────────────── */
 
   return (
-    <div className="min-h-screen bg-background font-sans text-slate-200 selection:bg-primary/30">
-      {/* ── TOP NAVBAR (FIXED) ── */}
+    <ProtectedRoute>
+      <div className="min-h-screen bg-background font-sans text-slate-200 selection:bg-primary/30">
+        {/* ── TOP NAVBAR (FIXED) ── */}
       <header className="fixed top-0 inset-x-0 h-20 bg-background/80 backdrop-blur-xl border-b border-white/10 z-[100] px-6 lg:px-12 flex items-center justify-between shadow-2xl">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-3 group">
@@ -627,7 +649,11 @@ export default function DashboardPage() {
               className="flex items-center gap-3 pl-2 pr-2 py-1.5 rounded-2xl border border-white/10 bg-white/5 hover:border-white/20 transition-all group"
             >
               <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-bold overflow-hidden border border-primary/20 group-hover:scale-105 transition-transform">
-                <User size={20} />
+                {user?.photoURL ? (
+                  <img src={user.photoURL} alt={userName} className="w-full h-full object-cover" />
+                ) : (
+                  userName.charAt(0).toUpperCase()
+                )}
               </div>
               <ChevronDown
                 size={16}
@@ -642,9 +668,9 @@ export default function DashboardPage() {
               <>
                 <div className="absolute top-full right-0 mt-4 w-72 bg-[#121c35] border border-white/10 rounded-3xl shadow-[0_32px_64px_-16px_rgba(0,0,0,0.6)] p-3 z-[110] animate-in fade-in zoom-in-95 duration-200">
                   <div className="px-5 py-4 border-b border-white/5 mb-2">
-                    <p className="text-base font-bold text-white">Felix Miller</p>
+                    <p className="text-base font-bold text-white">{userName}</p>
                     <p className="text-xs text-slate-500 font-medium tracking-tight mt-0.5">
-                      felix@techstack.io
+                      {userEmail}
                     </p>
                   </div>
                   <div className="space-y-1">
@@ -679,13 +705,13 @@ export default function DashboardPage() {
                       </button>
                     ))}
                     <div className="h-px bg-white/5 my-2 mx-5" />
-                    <Link
-                      href="/"
+                    <button
+                      onClick={handleLogout}
                       className="w-full flex items-center gap-4 px-4 py-3 rounded-2xl text-[14px] font-bold text-red-400 hover:bg-red-500/10 transition-all"
                     >
                       <LogOut size={18} />
                       Logout
-                    </Link>
+                    </button>
                   </div>
                 </div>
                 <div className="fixed inset-0 z-[105]" onClick={() => setProfileMenuOpen(false)} />
@@ -749,18 +775,18 @@ export default function DashboardPage() {
                   <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary border border-primary/20">
                     <Briefcase size={14} />
                   </div>
-                  <span className="text-xs font-bold text-slate-400">Founder / SaaS</span>
+                  <span className="text-xs font-bold text-slate-400 capitalize">{userRole}</span>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 border border-emerald-500/20">
                     <MapPin size={14} />
                   </div>
-                  <span className="text-xs font-bold text-slate-400">New Delhi, India</span>
+                  <span className="text-xs font-bold text-slate-400">{userLocation}</span>
                 </div>
               </div>
-              <button className="w-full mt-6 py-3 rounded-xl border border-white/5 text-[10px] uppercase font-black tracking-widest text-primary hover:bg-primary/10 hover:border-primary/20 transition-all">
+              <Link href="/onboarding" className="block w-full mt-6 py-3 rounded-xl border border-white/5 text-[10px] text-center uppercase font-black tracking-widest text-primary hover:bg-primary/10 hover:border-primary/20 transition-all">
                 Update User Context
-              </button>
+              </Link>
             </div>
 
             <div className="px-4 text-center">
@@ -795,5 +821,6 @@ export default function DashboardPage() {
         </main>
       </div>
     </div>
+    </ProtectedRoute>
   );
 }
