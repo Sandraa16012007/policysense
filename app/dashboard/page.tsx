@@ -38,7 +38,7 @@ import { cn } from "@/lib/utils";
 import Footer from "@/components/Footer";
 import { useAuth } from "@/context/AuthContext";
 import { logout } from "@/lib/authService";
-import { saveAnalysis } from "@/lib/userService";
+import { saveAnalysis, getAllAnalyses } from "@/lib/userService";
 import { ProtectedRoute } from "@/components/AuthGuards";
 import { Loader2 } from "lucide-react";
 
@@ -56,79 +56,7 @@ interface AnalysisItem {
   description?: string;
 }
 
-/* ──────────────────────── DATA ──────────────────────── */
 
-const RECENT_ANALYSES: AnalysisItem[] = [
-  {
-    id: "1",
-    title: "GST Amendment Update 2026",
-    date: "2 days ago",
-    status: "Action Required",
-    applicability: "YES",
-    description: "New filing requirements for MSMEs in the IT sector.",
-  },
-  {
-    id: "2",
-    title: "Data Privacy Regulation (DPDP) v2",
-    date: "5 days ago",
-    status: "Monitor",
-    applicability: "PARTIAL",
-    description: "Updated consent management guidelines for SaaS platforms.",
-  },
-  {
-    id: "3",
-    title: "Import Duty Revision - Electronics",
-    date: "1 week ago",
-    status: "No Impact",
-    applicability: "NO",
-    description: "Changes to hardware import tariffs (Not applicable to SaaS).",
-  },
-];
-
-const TRENDING_ALERTS = [
-  {
-    title: "Startup India Tax Holiday Extension",
-    desc: "Application deadline extended to June 2026 for eligible tech startups.",
-  },
-  {
-    title: "RBI Digital Lending Guidelines",
-    desc: "Tighter norms for fintech platforms regarding metadata storage.",
-  },
-];
-
-const DEADLINES = [
-  { name: "Annual Compliance Return", date: "April 15, 2026", status: "Action Required" },
-  { name: "Quarterly GST Filing", date: "April 20, 2026", status: "Monitor" },
-];
-
-const SAVED_ANALYSES = [
-  { title: "Labour Law Reforms", desc: "Impact on remote workforce contracts.", status: "Monitor" },
-  { title: "ZLD Compliance", desc: "Zero Liquid Discharge norms for manufacturing.", status: "No Impact" },
-];
-
-const ALL_ALERTS = [
-  {
-    icon: BellDot,
-    title: "New Compliance Deadline",
-    desc: "Submit your annual compliance report by April 15 to avoid penalties.",
-    tag: "Deadline",
-    color: "red",
-  },
-  {
-    icon: Shield,
-    title: "Security Policy Update",
-    desc: "New data residency requirements for companies handling EU citizen data.",
-    tag: "High Risk",
-    color: "red",
-  },
-  {
-    icon: AlertCircle,
-    title: "RBI Regulatory Sandbox",
-    desc: "Applications open for the next cohort of fintech innovations.",
-    tag: "Update",
-    color: "blue",
-  },
-];
 
 /* ──────────────────────── COMPONENTS ──────────────────────── */
 
@@ -196,6 +124,59 @@ export default function DashboardPage() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
 
+  // Dynamic Data States
+  const [analysesData, setAnalysesData] = useState<any[]>([]);
+  const [trendingAlerts, setTrendingAlerts] = useState<any[]>([{ title: "Loading...", desc: "Fetching real-time updates..." }]);
+  const [loadingData, setLoadingData] = useState(true);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    
+    // Fetch user analyses
+    getAllAnalyses(user.uid).then((res) => {
+      if (res.data) setAnalysesData(res.data);
+      setLoadingData(false);
+    });
+
+    // Fetch trending alerts via Gemini
+    fetch("/api/trending").then(res => res.json()).then(data => {
+      if (data.success && data.data) {
+        setTrendingAlerts(data.data);
+      }
+    }).catch(e => console.error(e));
+  }, [user]);
+
+  // Derived Dynamic Arrays
+  const RECENT_ANALYSES = analysesData.slice(0, 5).map(a => ({
+    id: a.id,
+    title: a.policy?.title || "Untitled",
+    date: a.system?.createdAt ? new Date(a.system.createdAt.seconds * 1000).toLocaleDateString() : "Just now",
+    status: a.relevance?.priority === "high" ? "Action Required" : a.relevance?.priority === "medium" ? "Monitor" : "No Impact",
+    applicability: a.relevance?.applies ? "YES" : "NO",
+    description: a.policy?.summary || "No description available",
+    actions: a.actions_required?.length || a.actions?.length || 0
+  }));
+
+  const DEADLINES = analysesData.flatMap(a => {
+    const actions = a.actions_required || a.actions || [];
+    return actions.filter((act: any) => act.deadline && !["flexible", "asap", "null"].includes(String(act.deadline).toLowerCase())).map((act: any) => ({
+      name: act.title,
+      date: act.deadline,
+      status: a.relevance?.priority === "high" ? "Action Required" : "Monitor"
+    }))
+  }).slice(0, 5);
+
+  const ALL_ALERTS = analysesData.flatMap(a => {
+    const actions = a.actions_required || a.actions || [];
+    return actions.map((act: any) => ({
+      icon: a.relevance?.priority === "high" ? AlertCircle : Info,
+      title: act.title,
+      desc: act.description,
+      tag: a.relevance?.priority === "high" ? "High Risk" : "Update",
+      color: a.relevance?.priority === "high" ? "red" : "blue",
+    }))
+  }).slice(0, 5);
+
   const handleLogout = async () => {
     try {
       await logout();
@@ -247,9 +228,12 @@ export default function DashboardPage() {
         {/* Recent Activity */}
         <Card title="Recent analyses">
           <div className="divide-y divide-white/5 -mx-6 -mb-6">
-            {RECENT_ANALYSES.map((item) => (
+            {RECENT_ANALYSES.length === 0 ? (
+              <div className="px-6 py-10 text-center text-slate-500 text-sm">No recent analyses. Run an analysis to see insights here.</div>
+            ) : RECENT_ANALYSES.map((item) => (
               <div
                 key={item.id}
+                onClick={() => router.push(`/dashboard/results/${item.id}`)}
                 className="px-6 py-5 hover:bg-white/5 transition-colors flex items-center justify-between group cursor-pointer"
               >
                 <div className="flex items-center gap-4">
@@ -274,10 +258,10 @@ export default function DashboardPage() {
         {/* Trending */}
         <Card title="Trending updates">
           <div className="space-y-6">
-            {TRENDING_ALERTS.map((alert, i) => (
+            {trendingAlerts.map((alert, i) => (
               <div key={i} className="flex gap-5 group">
                 <div className="w-12 h-12 rounded-2xl bg-primary/10 flex-shrink-0 flex items-center justify-center border border-primary/20 group-hover:bg-primary/20 transition-all">
-                  <TrendingUp size={20} className="text-primary" />
+                  {alert.title.includes("Loading") ? <Loader2 size={20} className="text-primary animate-spin" /> : <TrendingUp size={20} className="text-primary" />}
                 </div>
                 <div>
                   <h4 className="text-base font-bold text-white group-hover:text-primary transition-colors tracking-tight">
@@ -293,7 +277,9 @@ export default function DashboardPage() {
         {/* Deadlines */}
         <Card title="Deadlines approaching">
           <div className="space-y-4">
-            {DEADLINES.map((d, i) => (
+            {DEADLINES.length === 0 ? (
+               <div className="text-sm text-slate-500 py-4 text-center">No upcoming deadlines found in your analyses.</div>
+            ) : DEADLINES.map((d, i) => (
               <div
                 key={i}
                 className="flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/5 hover:border-white/10 transition-all"
@@ -318,8 +304,10 @@ export default function DashboardPage() {
         {/* Saved */}
         <Card title="Saved analyses">
           <div className="space-y-5">
-            {SAVED_ANALYSES.map((item, i) => (
-              <div key={i} className="group cursor-pointer p-4 rounded-2xl hover:bg-white/5 border border-transparent hover:border-white/5 transition-all">
+            {RECENT_ANALYSES.length === 0 ? (
+               <div className="text-sm text-slate-500 py-4 text-center">No saved analyses yet.</div>
+            ) : RECENT_ANALYSES.slice(0, 3).map((item, i) => (
+              <div key={i} onClick={() => router.push(`/dashboard/results/${item.id}`)} className="group cursor-pointer p-4 rounded-2xl hover:bg-white/5 border border-transparent hover:border-white/5 transition-all">
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="text-sm font-bold text-white group-hover:text-primary transition-colors">
                     {item.title}
@@ -329,7 +317,7 @@ export default function DashboardPage() {
                     className="text-slate-600 group-hover:text-primary group-hover:fill-primary transition-all"
                   />
                 </div>
-                <p className="text-xs text-slate-500 leading-relaxed">{item.desc}</p>
+                <p className="text-xs text-slate-500 leading-relaxed max-h-8 overflow-hidden line-clamp-2">{item.description}</p>
               </div>
             ))}
           </div>
@@ -510,7 +498,9 @@ export default function DashboardPage() {
 
       {/* List */}
       <div className="grid gap-5">
-        {RECENT_ANALYSES.map((item) => (
+        {RECENT_ANALYSES.length === 0 ? (
+            <div className="p-8 text-center text-slate-500 border border-white/10 rounded-2xl border-dashed">No analyses have been run yet. Head over to the Analyse tab to get started.</div>
+        ) : RECENT_ANALYSES.map((item) => (
           <div
             key={item.id}
             className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 hover:border-primary/40 hover:bg-white/10 transition-all group flex flex-col lg:flex-row lg:items-center justify-between gap-8"
@@ -540,7 +530,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex items-center gap-2 font-bold uppercase tracking-widest text-[10px]">
                   <FileText size={16} className="text-primary" />
-                  3 Recommended Actions
+                  {item.actions} Recommended Actions
                 </div>
               </div>
             </div>
@@ -604,7 +594,9 @@ export default function DashboardPage() {
       <SectionHeader title="Alerts" subtitle="Important updates that need your attention" />
 
       <div className="grid gap-6">
-        {ALL_ALERTS.map((alert, i) => {
+        {ALL_ALERTS.length === 0 ? (
+          <div className="p-8 text-center text-slate-500 border border-white/10 rounded-2xl border-dashed">No alerts right now. Run analyses to uncover hidden risks or action items!</div>
+        ) : ALL_ALERTS.map((alert, i) => {
           const Icon = alert.icon;
           return (
             <div
@@ -626,8 +618,8 @@ export default function DashboardPage() {
                 </div>
                 <p className="text-slate-400 text-lg leading-relaxed">{alert.desc}</p>
               </div>
-              <button className="w-full md:w-auto px-8 py-3 rounded-xl border border-white/10 font-bold text-sm text-white hover:bg-white/10 transition-all active:scale-95">
-                View Task
+              <button onClick={() => setActiveTab("Results")} className="w-full md:w-auto px-8 py-3 rounded-xl border border-white/10 font-bold text-sm text-white hover:bg-white/10 transition-all active:scale-95">
+                Investigate
               </button>
             </div>
           );

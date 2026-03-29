@@ -189,8 +189,8 @@ export default function ResultsDetail() {
             {profileMenuOpen && (
               <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute top-full right-0 mt-4 w-72 bg-[#0c1222] border border-white/10 rounded-3xl shadow-[0_32px_64px_-16px_rgba(0,0,0,0.8)] p-3 z-[110]">
                 <div className="px-5 py-4 border-b border-white/5 mb-2">
-                  <p className="text-base font-bold text-white">Felix Miller</p>
-                  <p className="text-xs text-slate-500 font-medium tracking-tight mt-0.5">felix@techstack.io</p>
+                  <p className="text-base font-bold text-white">{userName}</p>
+                  <p className="text-xs text-slate-500 font-medium tracking-tight mt-0.5">{user?.email}</p>
                 </div>
                 <div className="space-y-1">
                   {[

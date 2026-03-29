@@ -5,7 +5,10 @@ import {
   updateDoc, 
   serverTimestamp,
   collection,
-  addDoc
+  addDoc,
+  getDocs,
+  query,
+  orderBy
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -141,6 +144,26 @@ export const getAnalysis = async (uid: string, analysisId: string) => {
       return { data: docSnap.data(), error: null };
     }
     return { data: null, error: "Analysis not found" };
+  } catch (error: any) {
+    return { data: null, error: error.message };
+  }
+};
+
+/**
+ * Retrieves all analysis results for a specific user, ordered by creation date (newest first).
+ */
+export const getAllAnalyses = async (uid: string) => {
+  try {
+    const analysisRef = collection(db, "users", uid, "analyses");
+    const q = query(analysisRef, orderBy("system.createdAt", "desc"));
+    const querySnapshot = await getDocs(q);
+    
+    const analyses: any[] = [];
+    querySnapshot.forEach((doc) => {
+      analyses.push({ id: doc.id, ...doc.data() });
+    });
+    
+    return { data: analyses, error: null };
   } catch (error: any) {
     return { data: null, error: error.message };
   }
